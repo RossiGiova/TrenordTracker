@@ -26,7 +26,7 @@ Impostazioni in `config/settings.py` (`LIVE_*`). Per non scaricare dati: `runser
 `python manage.py fetch_timetable` usa orari reali con ritardi comunque simulati. Non servono per il sito reale.
 
 ## Produzione
-Per tenerlo acceso 24h su un portatile Linux (systemd, gunicorn, port forwarding) vedi **DEPLOY.md**.
+Per tenerlo acceso 24h su Linux (systemd, gunicorn, port forwarding) vedi **DEPLOY.md**.
 
 ## Pagine
 - `/` - treni di oggi: posizione (in stazione / in tratta A -> B), avanzamento, arrivo programmato, arrivo stimato/reale, ritardo; filtri per linea e stato; KPI per linea.
