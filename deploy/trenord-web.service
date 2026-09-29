@@ -1,0 +1,15 @@
+[Unit]
+Description=Trenord Tracker - sito web (gunicorn)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=@USER@
+WorkingDirectory=@APP@
+EnvironmentFile=/etc/trenord.env
+ExecStart=@APP@/.venv/bin/gunicorn config.wsgi:application --bind ${BIND} --workers 2 --threads 4 --timeout 60
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,105 @@
+{% extends "trains/base.html" %}
+{% load trains_extras %}
+{% block title %}Treno {{ train.number }} · Trenord Tracker{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+  <div>
+    <h1 class="h3 mb-0">
+      Treno {{ train.number }}
+      {% if train.line %}<a class="line-badge text-decoration-none ms-2" style="background:{{ train.line.color }}" href="{% url 'line_detail' train.line.code %}">{{ train.line.code }}</a>{% endif %}
+    </h1>
+    <div class="text-muted">{{ train.origin }} → {{ train.destination }}</div>
+  </div>
+  <form method="get" class="d-flex align-items-center gap-2">
+    <label for="date" class="text-muted small mb-0">Giorno</label>
+    <select name="date" id="date" class="form-select form-select-sm" onchange="this.form.submit()">
+      {% for d in dates %}<option value="{{ d|date:'Y-m-d' }}" {% if d == run.service_date %}selected{% endif %}>{{ d|date:"D d/m/Y" }}</option>{% endfor %}
+    </select>
+  </form>
+</div>
+
+<div class="card shadow-sm mb-4"><div class="card-body">
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div>
+      <div class="text-muted small">Posizione</div>
+      <div class="h5 mb-0" id="position">—</div>
+    </div>
+    <div class="text-end">
+      <div class="text-muted small">Ritardo attuale</div>
+      <div class="h5 mb-0" id="delay">—</div>
+    </div>
+  </div>
+  <div class="progress my-3" style="height:.9rem"><div id="bar" class="progress-bar" style="width:0%"></div></div>
+  <div class="row text-center">
+    <div class="col"><div class="text-muted small">Arrivo programmato</div><div class="h5" id="sched">—</div></div>
+    <div class="col"><div class="text-muted small" id="arr-label">Arrivo stimato</div><div class="h5" id="arr">—</div></div>
+  </div>
+</div></div>
+
+<div class="row g-4">
+  <div class="col-lg-5"><div class="card shadow-sm h-100"><div class="card-header bg-body">Fermate</div>
+    <div class="card-body"><ul class="tl" id="timeline"></ul></div></div></div>
+  <div class="col-lg-7">
+    <div class="card shadow-sm mb-4"><div class="card-header bg-body">Orari programmati e reali</div>
+      <div class="table-responsive"><table class="table table-sm mb-0 align-middle">
+        <thead><tr><th>Stazione</th><th class="text-end">Arr. prog.</th><th class="text-end">Arr. reale</th><th class="text-end">Part. prog.</th><th class="text-end">Part. reale</th><th>Ritardo</th></tr></thead>
+        <tbody id="stops"></tbody></table></div></div>
+    <div class="card shadow-sm"><div class="card-header bg-body">Ritardo per fermata</div>
+      <div class="card-body"><div class="chart-box"><canvas id="chart"></canvas></div>
+      <div class="small text-muted mt-2">Confronto tra il ritardo di questa corsa e la media degli ultimi 14 giorni dello stesso treno.</div></div></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const RUN_ID = {{ run.id }}, IS_TODAY = {{ is_today|yesnojs }};
+let chart;
+function draw(d) {
+  const $ = s => document.getElementById(s);
+  $("position").textContent = d.position;
+  $("delay").innerHTML = T.delayBadge(d.delay);
+  const bar = $("bar"); bar.style.width = d.progress + "%";
+  bar.className = "progress-bar bg-" + (d.state === "arrived" ? "success" : T.delayClass(d.delay) === "danger" ? "danger" : "primary");
+  $("sched").textContent = T.time(d.sched_arrival);
+  $("arr").textContent = T.time(d.arrival);
+  $("arr-label").textContent = d.arrival_is_actual ? "Arrivo reale" : "Arrivo stimato";
+
+  $("timeline").innerHTML = d.stops.map((s, i) => {
+    let cls = s.reached && !(d.state !== "arrived" && d.from_index === i && d.state === "at_station") ? "done" : "";
+    if (d.state === "at_station" && d.from_index === i) cls = "current";
+    if (d.state === "running" && d.from_index === i) cls = "done between";
+    const t = s.actual_arr || s.actual_dep;
+    return `<li class="${cls}">
+      <div class="d-flex justify-content-between"><strong>${T.esc(s.station)}</strong>
+      <span class="times">${T.time(s.sched_arr || s.sched_dep)}${t ? ` → <strong>${T.time(t)}</strong>` : ""}</span></div>
+      ${cls.includes("between") ? `<div class="between-note"><i class="bi bi-train-front"></i> in tratta verso ${T.esc(d.stops[i+1].station)}</div>` : ""}
+    </li>`;
+  }).join("");
+
+  $("stops").innerHTML = d.stops.map(s => `
+    <tr><td>${T.esc(s.station)}</td>
+    <td class="text-end">${T.time(s.sched_arr)}</td><td class="text-end fw-semibold">${T.time(s.actual_arr)}</td>
+    <td class="text-end">${T.time(s.sched_dep)}</td><td class="text-end fw-semibold">${T.time(s.actual_dep)}</td>
+    <td>${T.delayBadge(s.delay)}</td></tr>`).join("");
+
+  const labels = d.stops.map(s => s.station);
+  const data = {
+    labels,
+    datasets: [
+      {label: "Questa corsa", data: d.stops.map(s => s.delay), borderColor: "#0d6efd", backgroundColor: "#0d6efd",
+       tension: .25, spanGaps: false, pointRadius: 4},
+      {label: "Media storica", data: d.stops.map(s => s.hist_delay), borderColor: "#adb5bd", backgroundColor: "#adb5bd",
+       borderDash: [6, 4], tension: .25, pointRadius: 2},
+    ],
+  };
+  if (chart) { chart.data = data; chart.update("none"); return; }
+  chart = new Chart($("chart"), {type: "line", data, options: {
+    maintainAspectRatio: false, interaction: {mode: "index", intersect: false},
+    scales: {y: {title: {display: true, text: "minuti di ritardo"}, suggestedMin: 0}, x: {ticks: {maxRotation: 60}}},
+  }});
+}
+async function load() { try { draw(await T.json(`/api/runs/${RUN_ID}/`)); } catch (e) { console.error(e); } }
+load();
+if (IS_TODAY) setInterval(load, 30000);
+</script>
+{% endblock %}

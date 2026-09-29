@@ -1,0 +1,88 @@
+{% extends "trains/base.html" %}
+{% block title %}Linea {{ line.code }} · Trenord Tracker{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+  <div>
+    <h1 class="h3 mb-0"><span class="line-badge fs-4" style="background:{{ line.color }}">{{ line.code }}</span> <span class="ms-2">{{ line.name }}</span></h1>
+    <div class="text-muted">Statistiche sui ritardi</div>
+  </div>
+  <div class="btn-group" id="range">
+    <button class="btn btn-outline-primary" data-days="1">Oggi</button>
+    <button class="btn btn-outline-primary" data-days="7">7 giorni</button>
+    <button class="btn btn-outline-primary active" data-days="14">14 giorni</button>
+    <button class="btn btn-outline-primary" data-days="30">30 giorni</button>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="kpi" id="k-avg">—</div><div class="small text-muted">ritardo medio (min)</div></div></div></div>
+  <div class="col-6 col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="kpi" id="k-ot">—</div><div class="small text-muted">rilevazioni puntuali (≤5')</div></div></div></div>
+  <div class="col-6 col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="kpi" id="k-max">—</div><div class="small text-muted">ritardo massimo (min)</div></div></div></div>
+  <div class="col-6 col-md-3"><div class="card shadow-sm"><div class="card-body"><div class="kpi" id="k-n">—</div><div class="small text-muted">rilevazioni</div></div></div></div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-8"><div class="card shadow-sm"><div class="card-header bg-body">Ritardo medio giornaliero e puntualità</div><div class="card-body"><div class="chart-box"><canvas id="c-day"></canvas></div></div></div></div>
+  <div class="col-lg-4"><div class="card shadow-sm"><div class="card-header bg-body">Distribuzione dei ritardi</div><div class="card-body"><div class="chart-box"><canvas id="c-dist"></canvas></div></div></div></div>
+  <div class="col-lg-7"><div class="card shadow-sm"><div class="card-header bg-body">Ritardo medio per stazione</div><div class="card-body"><div class="chart-box"><canvas id="c-station"></canvas></div></div></div></div>
+  <div class="col-lg-5"><div class="card shadow-sm"><div class="card-header bg-body">Ritardo medio per fascia oraria</div><div class="card-body"><div class="chart-box"><canvas id="c-hour"></canvas></div></div></div></div>
+</div>
+
+<h2 class="h5 mt-4">Treni della linea</h2>
+<div class="d-flex flex-wrap gap-2">
+  {% for t in trains %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'train_detail' t.number %}">{{ t.number }}</a>{% endfor %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const COLOR = "{{ line.color }}", CODE = "{{ line.code }}";
+const charts = {};
+function upsert(id, cfg) {
+  if (charts[id]) { charts[id].data = cfg.data; charts[id].options = cfg.options; charts[id].update(); return; }
+  charts[id] = new Chart(document.getElementById(id), cfg);
+}
+const base = {maintainAspectRatio: false};
+const fmtDate = iso => new Date(iso).toLocaleDateString("it-IT", {day: "2-digit", month: "2-digit"});
+
+async function load(days) {
+  const d = await T.json(`/api/lines/${CODE}/stats/?days=${days}`);
+  const k = d.kpi;
+  document.getElementById("k-avg").textContent = k.avg ?? "—";
+  document.getElementById("k-ot").textContent = k.on_time_pct === null ? "—" : k.on_time_pct + "%";
+  document.getElementById("k-max").textContent = k.max ?? "—";
+  document.getElementById("k-n").textContent = k.n;
+
+  upsert("c-day", {type: "bar", data: {
+    labels: d.by_day.map(x => fmtDate(x.date)),
+    datasets: [
+      {type: "bar", label: "Ritardo medio (min)", data: d.by_day.map(x => x.avg), backgroundColor: COLOR + "cc", yAxisID: "y"},
+      {type: "line", label: "Puntualità (%)", data: d.by_day.map(x => x.on_time_pct), borderColor: "#198754", backgroundColor: "#198754", yAxisID: "y1", tension: .25},
+    ]}, options: {...base, scales: {
+      y: {beginAtZero: true, title: {display: true, text: "minuti"}},
+      y1: {position: "right", min: 0, max: 100, grid: {drawOnChartArea: false}, title: {display: true, text: "%"}}}}});
+
+  const colors = ["#198754", "#ffc107", "#fd7e14", "#dc3545"];
+  upsert("c-dist", {type: "doughnut", data: {
+    labels: d.buckets.map(b => b.label), datasets: [{data: d.buckets.map(b => b.count), backgroundColor: colors}]},
+    options: {...base, plugins: {legend: {position: "bottom"}}}});
+
+  upsert("c-station", {type: "bar", data: {
+    labels: d.by_station.map(s => s.station),
+    datasets: [
+      {label: "Media (min)", data: d.by_station.map(s => s.avg), backgroundColor: COLOR + "cc"},
+      {label: "Massimo (min)", data: d.by_station.map(s => s.max), backgroundColor: "#dee2e6"},
+    ]}, options: {...base, scales: {y: {beginAtZero: true}, x: {ticks: {maxRotation: 60}}}}});
+
+  upsert("c-hour", {type: "bar", data: {
+    labels: d.by_hour.map(h => h.hour + ":00"),
+    datasets: [{label: "Ritardo medio (min)", data: d.by_hour.map(h => h.avg),
+      backgroundColor: d.by_hour.map(h => [7, 8, 17, 18, 19].includes(h.hour) ? "#dc3545cc" : COLOR + "99")}]},
+    options: {...base, plugins: {legend: {display: false}}, scales: {y: {beginAtZero: true}}}});
+}
+document.querySelectorAll("#range button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#range button").forEach(x => x.classList.remove("active"));
+  b.classList.add("active"); load(+b.dataset.days);
+}));
+load(14);
+</script>
+{% endblock %}

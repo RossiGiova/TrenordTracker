@@ -1,0 +1,19 @@
+.line-dot{display:inline-block;width:.7rem;height:.7rem;border-radius:50%;margin-right:.35rem}
+.line-badge{color:#fff;font-weight:600;border-radius:.4rem;padding:.15rem .5rem;font-size:.85rem}
+.line-card{border-top:4px solid var(--c,#0d6efd);cursor:pointer;transition:transform .1s}
+.line-card:hover{transform:translateY(-2px)}
+.kpi{font-size:1.6rem;font-weight:600;line-height:1.1}
+.progress{height:.55rem;min-width:110px}
+.chart-box{position:relative;height:300px}
+table td,table th{vertical-align:middle}
+.updating{opacity:.55;transition:opacity .2s}
+/* timeline fermate */
+.tl{list-style:none;margin:0;padding:0}
+.tl li{position:relative;padding:.55rem 0 .55rem 2.2rem;border-left:3px solid #ced4da;margin-left:.8rem}
+.tl li::before{content:"";position:absolute;left:-.62rem;top:.95rem;width:1rem;height:1rem;border-radius:50%;background:#fff;border:3px solid #ced4da}
+.tl li.done{border-left-color:#198754}.tl li.done::before{border-color:#198754;background:#198754}
+.tl li.current::before{border-color:#0d6efd;background:#0d6efd;box-shadow:0 0 0 .3rem rgba(13,110,253,.25)}
+.tl li.between{border-left:3px dashed #0d6efd}
+.tl .between-note{position:absolute;left:2.2rem;bottom:-.35rem;font-size:.75rem;color:#0d6efd;font-weight:600}
+.tl li:last-child{border-left-color:transparent}
+.tl .times{font-variant-numeric:tabular-nums}

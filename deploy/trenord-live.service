@@ -1,0 +1,15 @@
+[Unit]
+Description=Trenord Tracker - scaricamento dati reali da ViaggiaTreno
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=@USER@
+WorkingDirectory=@APP@
+EnvironmentFile=/etc/trenord.env
+ExecStart=@APP@/.venv/bin/python manage.py live_updater
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

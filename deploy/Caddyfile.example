@@ -1,0 +1,6 @@
+# HTTPS automatico con Caddy (serve un dominio che punta al tuo IP, porte 80 e 443 inoltrate al portatile).
+# Sostituisci il dominio e copia in /etc/caddy/Caddyfile, poi: sudo systemctl enable --now caddy
+# In /etc/trenord.env imposta: BIND=127.0.0.1:8000, DJANGO_HTTPS=1, DJANGO_ALLOWED_HOSTS=treni.tuodominio.it
+treni.tuodominio.it {
+    reverse_proxy 127.0.0.1:8000
+}

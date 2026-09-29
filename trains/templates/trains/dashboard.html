@@ -1,0 +1,110 @@
+{% extends "trains/base.html" %}
+{% block title %}In tempo reale · Trenord Tracker{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+  <h1 class="h3 mb-0">Treni in tempo reale</h1>
+  <span class="text-muted small"><i class="bi bi-arrow-repeat"></i> aggiornato alle <span id="last-update">—</span> · si aggiorna ogni 30 s</span>
+</div>
+
+<div class="row g-3 mb-4" id="line-cards">
+  {% for l in lines %}<div class="col-6 col-md-4 col-xl-3"><div class="card placeholder-glow"><div class="card-body"><span class="placeholder col-6"></span></div></div></div>{% endfor %}
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div class="row g-2 mb-3">
+      <div class="col-md-4"><input id="search" class="form-control" placeholder="Cerca numero treno o stazione…"></div>
+      <div class="col-md-4">
+        <select id="line-filter" class="form-select">
+          <option value="">Tutte le linee</option>
+          {% for l in lines %}<option>{{ l.code }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <div class="btn-group w-100" role="group" id="state-filter">
+          <input type="radio" class="btn-check" name="st" id="st-run" value="active" checked><label class="btn btn-outline-primary" for="st-run">In viaggio</label>
+          <input type="radio" class="btn-check" name="st" id="st-next" value="not_started"><label class="btn btn-outline-primary" for="st-next">Da partire</label>
+          <input type="radio" class="btn-check" name="st" id="st-done" value="arrived"><label class="btn btn-outline-primary" for="st-done">Arrivati</label>
+          <input type="radio" class="btn-check" name="st" id="st-all" value=""><label class="btn btn-outline-primary" for="st-all">Tutti</label>
+        </div>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead><tr>
+          <th>Treno</th><th>Linea</th><th>Tratta</th><th>Posizione attuale</th><th>Avanzamento</th>
+          <th class="text-end">Arrivo programmato</th><th class="text-end">Arrivo stimato / reale</th><th>Ritardo</th>
+        </tr></thead>
+        <tbody id="runs"></tbody>
+      </table>
+    </div>
+    <div id="empty" class="text-center text-muted py-4 d-none">Nessun treno corrisponde ai filtri.</div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+let RUNS = [];
+const $ = s => document.querySelector(s);
+
+async function loadSummary() {
+  const {lines} = await T.json("/api/summary/");
+  $("#line-cards").innerHTML = lines.map(l => `
+    <div class="col-6 col-md-4 col-xl-3">
+      <div class="card line-card shadow-sm h-100" style="--c:${l.color}" onclick="location.href='/linea/${l.code}/'">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="line-badge" style="background:${l.color}">${l.code}</span>
+            <span class="small text-muted">${l.running} in viaggio</span>
+          </div>
+          <div class="small text-muted text-truncate mb-2">${T.esc(l.name)}</div>
+          <div class="d-flex justify-content-between">
+            <div><div class="kpi">${l.avg === null ? "—" : l.avg.toFixed(1)}<small class="fs-6"> min</small></div><div class="small text-muted">ritardo medio oggi</div></div>
+            <div class="text-end"><div class="kpi">${l.on_time_pct === null ? "—" : Math.round(l.on_time_pct) + "%"}</div><div class="small text-muted">puntuali (≤5')</div></div>
+          </div>
+        </div>
+      </div>
+    </div>`).join("");
+}
+
+function render() {
+  const q = $("#search").value.trim().toLowerCase();
+  const line = $("#line-filter").value;
+  const st = document.querySelector('input[name=st]:checked').value;
+  const rows = RUNS.filter(r => {
+    if (line && r.line !== line) return false;
+    if (st === "active" && !["running", "at_station"].includes(r.state)) return false;
+    if (st && st !== "active" && r.state !== st) return false;
+    if (q && !(`${r.number} ${r.origin} ${r.destination} ${r.position}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  $("#runs").innerHTML = rows.map(r => `
+    <tr>
+      <td><a class="fw-semibold text-decoration-none" href="/treno/${r.number}/">${r.number}</a></td>
+      <td>${T.lineBadge(r.line, r.line_color)}</td>
+      <td class="small">${T.esc(r.origin)} <span class="text-muted">${T.time(r.departure)}</span><br><i class="bi bi-arrow-down-short"></i> ${T.esc(r.destination)}</td>
+      <td class="small">${T.esc(r.position)}</td>
+      <td><div class="progress" title="${r.progress}%"><div class="progress-bar bg-${r.state === "arrived" ? "success" : "primary"}" style="width:${r.progress}%"></div></div></td>
+      <td class="text-end">${T.time(r.sched_arrival)}</td>
+      <td class="text-end fw-semibold">${T.time(r.arrival)}${r.state === "arrived" ? "" : ' <small class="text-muted fw-normal">stim.</small>'}</td>
+      <td>${T.delayBadge(r.delay)}</td>
+    </tr>`).join("");
+  $("#empty").classList.toggle("d-none", rows.length > 0);
+}
+
+async function refresh() {
+  document.body.classList.add("updating");
+  try {
+    const [d] = await Promise.all([T.json("/api/runs/"), loadSummary()]);
+    RUNS = d.runs;
+    $("#last-update").textContent = T.clock();
+    render();
+  } catch (e) { console.error(e); }
+  document.body.classList.remove("updating");
+}
+["#search", "#line-filter"].forEach(s => $(s).addEventListener("input", render));
+document.querySelectorAll('input[name=st]').forEach(e => e.addEventListener("change", render));
+refresh();
+setInterval(refresh, 30000);
+</script>
+{% endblock %}

@@ -1,0 +1,26 @@
+# Ambiente e cache
+.venv/
+venv/
+__pycache__/
+*.pyc
+.idea/
+.vscode/
+
+# Dati locali: database con lo storico, campioni di risposte, orari scaricati, file statici generati
+db.sqlite3
+db.sqlite3-*
+*.sqlite3
+debug_samples/
+timetable.json
+staticfiles/
+
+# Segreti e configurazione locale
+.env
+.env.*
+*.env
+
+# File di lavoro/temporanei
+*.zip
+_to_delete*
+.fuse_hidden*
+*.log
