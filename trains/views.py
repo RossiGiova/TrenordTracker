@@ -4,6 +4,7 @@ from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 
+from . import route as routes
 from . import stats
 from .models import Line, Train, TrainRun
 
@@ -130,3 +131,45 @@ def api_line_stats(request, code):
     except ValueError:
         days = 14
     return JsonResponse(stats.line_stats(line, days))
+
+
+def api_line_live(request, code):
+    """Treni della linea in viaggio adesso, posizionati sul percorso della linea."""
+    line = get_object_or_404(Line, code=code)
+    now = timezone.now()
+    route = routes.get_route(line)
+    idx = {s["code"]: i for i, s in enumerate(route)}
+    runs = (TrainRun.objects.filter(train__line=line, service_date__gte=timezone.localdate() - timedelta(days=1),
+                                    cancelled=False)
+            .select_related("train").prefetch_related("stops__station"))
+    trains = []
+    for run in runs:
+        pos = run.position(now)
+        if pos["state"] not in ("running", "at_station"):
+            continue
+        stops = run.get_stops()
+        codes = [s.station.code for s in stops]
+        if any(c not in idx for c in codes):          # percorso in cache non aggiornato
+            route = routes.get_route(line, force=True)
+            idx = {s["code"]: i for i, s in enumerate(route)}
+            if any(c not in idx for c in codes):
+                continue
+        a = idx[codes[pos["from_index"]]]
+        if pos["state"] == "running":
+            b = idx[codes[pos["to_index"]]]
+            route_pos = a + (b - a) * pos["frac"]
+        else:
+            b, route_pos = a, float(a)
+        direction = 1 if idx[codes[-1]] >= idx[codes[0]] else -1
+        nxt = stops[pos["to_index"]] if pos["to_index"] is not None else None
+        eta = None
+        if nxt is not None and nxt.sched_arr:
+            eta = nxt.actual_arr or nxt.sched_arr + timedelta(minutes=pos["delay"] or 0)
+        trains.append({
+            "number": run.train.number, "origin": stops[0].station.name, "destination": stops[-1].station.name,
+            "direction": direction, "route_pos": round(route_pos, 3), "state": pos["state"],
+            "position": pos["label"], "delay": pos["delay"], "progress": pos["progress"],
+            "next_station": nxt.station.name if nxt else None, "next_eta": _iso(eta),
+        })
+    trains.sort(key=lambda t: t["route_pos"])
+    return JsonResponse({"now": _iso(now), "route": route, "trains": trains})

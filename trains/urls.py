@@ -9,5 +9,6 @@ urlpatterns = [
     path("api/summary/", views.api_summary, name="api_summary"),
     path("api/runs/", views.api_runs, name="api_runs"),
     path("api/runs/<int:pk>/", views.api_run_detail, name="api_run_detail"),
+    path("api/lines/<str:code>/live/", views.api_line_live, name="api_line_live"),
     path("api/lines/<str:code>/stats/", views.api_line_stats, name="api_line_stats"),
 ]

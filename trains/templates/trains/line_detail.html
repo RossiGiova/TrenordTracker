@@ -4,13 +4,33 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
   <div>
     <h1 class="h3 mb-0"><span class="line-badge fs-4" style="background:{{ line.color }}">{{ line.code }}</span> <span class="ms-2">{{ line.name }}</span></h1>
-    <div class="text-muted">Statistiche sui ritardi</div>
+    <div class="text-muted">Posizione in tempo reale e statistiche sui ritardi</div>
   </div>
   <div class="btn-group" id="range">
     <button class="btn btn-outline-primary" data-days="1">Oggi</button>
     <button class="btn btn-outline-primary" data-days="7">7 giorni</button>
     <button class="btn btn-outline-primary active" data-days="14">14 giorni</button>
     <button class="btn btn-outline-primary" data-days="30">30 giorni</button>
+  </div>
+</div>
+
+
+<div class="card shadow-sm mb-4" id="live-card">
+  <div class="card-header bg-body d-flex justify-content-between align-items-center">
+    <span><strong>Dove sono i treni adesso</strong> <span class="badge text-bg-secondary ms-1" id="live-n">0</span></span>
+    <span class="small text-muted" id="live-upd">—</span>
+  </div>
+  <div class="card-body p-0">
+    <div id="live-empty" class="text-muted p-3 d-none">Nessun treno in viaggio su questa linea in questo momento.</div>
+    <div class="table-responsive d-none" id="live-table-wrap">
+      <table class="table table-hover align-middle mb-0 live-table">
+        <thead class="table-light"><tr>
+          <th>Treno</th><th>Tratta</th><th>Dove si trova</th><th>Prossima fermata</th>
+          <th class="text-end">Arrivo previsto</th><th class="text-end">Ritardo</th><th style="min-width:110px">Percorso</th>
+        </tr></thead>
+        <tbody id="live-rows"></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -84,5 +104,39 @@ document.querySelectorAll("#range button").forEach(b => b.addEventListener("clic
   b.classList.add("active"); load(+b.dataset.days);
 }));
 load(14);
+
+// ---------- Posizione live dei treni ----------
+const esc = x => String(x ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const delayCls = d => d === null || d === undefined ? "secondary" : d <= 1 ? "success" : d <= 5 ? "warning" : "danger";
+const delayTxt = d => d === null || d === undefined ? "n.d." : (d > 0 ? "+" + d : d) + "'";
+const hhmm = iso => iso ? new Date(iso).toLocaleTimeString("it-IT", {hour: "2-digit", minute: "2-digit"}) : "—";
+
+function renderLive(d) {
+  const trains = d.trains || [];
+  document.getElementById("live-n").textContent = trains.length;
+  document.getElementById("live-upd").textContent = "aggiornato alle " + hhmm(d.now) + " · ogni 30 s";
+  document.getElementById("live-empty").classList.toggle("d-none", trains.length > 0);
+  document.getElementById("live-table-wrap").classList.toggle("d-none", trains.length === 0);
+  if (!trains.length) return;
+  // ordine: per tratta (direzione), poi dal treno più avanti a quello più indietro
+  const sorted = [...trains].sort((a, b) => (b.direction - a.direction) || (a.direction === 1 ? b.route_pos - a.route_pos : a.route_pos - b.route_pos));
+  document.getElementById("live-rows").innerHTML = sorted.map(t => {
+    const where = t.state === "at_station" ? "In stazione a <strong>" + esc(t.position.replace("In stazione a ", "")) + "</strong>" : esc(t.position.replace("In tratta ", ""));
+    return '<tr>' +
+      '<td><a class="fw-semibold text-decoration-none" href="/treno/' + t.number + '/">' + t.number + '</a></td>' +
+      '<td>' + esc(t.origin) + ' → ' + esc(t.destination) + '</td>' +
+      '<td>' + where + '</td>' +
+      '<td>' + esc(t.next_station || "—") + '</td>' +
+      '<td class="text-end">' + hhmm(t.next_eta) + '</td>' +
+      '<td class="text-end"><span class="badge text-bg-' + delayCls(t.delay) + '">' + delayTxt(t.delay) + '</span></td>' +
+      '<td><div class="progress" style="height:6px"><div class="progress-bar" style="width:' + (t.progress || 0) + '%;background:' + COLOR + '"></div></div><div class="small text-muted">' + (t.progress || 0) + '%</div></td>' +
+      '</tr>';
+  }).join("");
+}
+async function loadLive() {
+  try { renderLive(await T.json(`/api/lines/${CODE}/live/`)); }
+  catch (e) { document.getElementById("live-upd").textContent = "errore di aggiornamento"; }
+}
+loadLive(); setInterval(loadLive, 30000);
 </script>
 {% endblock %}

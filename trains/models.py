@@ -140,4 +140,5 @@ def compute_position(stops, now):
         if total > 0:
             frac = min(max((now - cur.actual_dep).total_seconds() / total, 0.0), 0.99)
     return {"state": "running", "label": f"In tratta {cur.station.name} → {nxt.station.name}",
-            "progress": round((i + frac) / (n - 1) * 100), "delay": delay, "from_index": i, "to_index": i + 1}
+            "progress": round((i + frac) / (n - 1) * 100), "delay": delay, "from_index": i, "to_index": i + 1,
+            "frac": frac}

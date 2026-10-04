@@ -136,3 +136,54 @@ class LineStyleTests(TestCase):
                              stops=[ingest.StopData("a", "A"), ingest.StopData("b", "B")])
         ingest.save_run(run)
         self.assertEqual(Line.objects.get(code="S6").color, "#e67e22")
+
+
+class LineLiveTests(TestCase):
+    """Vista 'dove sono i treni adesso': percorso della linea + posizione dei treni."""
+
+    NAMES = ["Lecco", "Airuno", "Monza", "Greco Pirelli", "Garibaldi"]
+
+    def _run(self, line, number, names, base, actual_upto, delay=3):
+        from datetime import timedelta
+        from trains.models import Station, StopTime
+        def stn(n):
+            return Station.objects.get_or_create(code=n[:3].upper() + str(self.NAMES.index(n)), defaults={"name": n})[0]
+        tr = Train.objects.create(number=number, category="REG", line=line, origin=stn(names[0]),
+                                  destination=stn(names[-1]), origin_code="x", tracked=True)
+        run = TrainRun.objects.create(train=tr, service_date=base.date())
+        for i, n in enumerate(names):
+            st = stn(n)
+            sched = base + timedelta(minutes=10 * i)
+            kw = dict(run=run, station=st, sequence=i, sched_arr=sched, sched_dep=sched)
+            if i <= actual_upto:
+                kw.update(actual_arr=sched + timedelta(minutes=delay), actual_dep=sched + timedelta(minutes=delay))
+            StopTime.objects.create(**kw)
+        return run
+
+    def test_route_and_positions(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from trains.models import Line
+        from trains import route as routes
+        line = Line.objects.create(code="S8", name="Lecco - Milano", color="#00a7b5")
+        base = timezone.now().replace(microsecond=0) - timedelta(minutes=15)
+        self._run(line, "24501", self.NAMES, base, 1)                      # verso Milano, tra Airuno e Monza
+        self._run(line, "24502", self.NAMES[::-1], base, 0, delay=0)       # verso Lecco, appena partito
+        routes._CACHE.clear()
+        d = self.client.get("/api/lines/S8/live/").json()
+        self.assertEqual([s["name"] for s in d["route"]], self.NAMES)
+        by = {t["number"]: t for t in d["trains"]}
+        self.assertEqual(set(by), {"24501", "24502"})
+        self.assertEqual(by["24501"]["direction"], 1)
+        self.assertEqual(by["24502"]["direction"], -1)
+        self.assertTrue(1 <= by["24501"]["route_pos"] <= 2)
+        self.assertGreaterEqual(by["24502"]["route_pos"], 3)
+        self.assertEqual(by["24501"]["delay"], 3)
+        self.assertEqual(by["24501"]["next_station"], "Monza")
+
+    def test_empty_when_no_trains(self):
+        from trains.models import Line
+        Line.objects.create(code="S9", name="x", color="#000000")
+        d = self.client.get("/api/lines/S9/live/").json()
+        self.assertEqual(d["trains"], [])
+        self.assertEqual(self.client.get("/api/lines/ZZ/live/").status_code, 404)
